@@ -11,6 +11,8 @@ const constants = require('../../constants');
 const generics = require('../../generics');
 const listfile = require('../../casc/listfile');
 const log = require('../../log');
+const TGA = require('../../2D/tga');
+const fs = require('fs');
 
 const BufferWrapper = require('../../buffer');
 const BLPFile = require('../../casc/blp');
@@ -397,7 +399,118 @@ class ADTExporter {
 		await mtl.write(config.overwriteFiles);
 
 		if (quality !== 0) {
-			if (quality === -1) {
+			if (quality === -2){
+				// Export splat maps.
+				const materialIDs = texAdt.diffuseTextureFileDataIDs;
+				const texParams = texAdt.texParams;
+				const prefix = this.tileID;
+
+				// Export the raw diffuse textures to disk.
+				const materials = new Array(materialIDs.length);
+				var materialCount = materials.length; // TEMP REMOVE ME
+				for (let i = 0, n = materials.length; i < n; i++) {
+					const diffuseFileDataID = materialIDs[i];
+					const blp = new BLPFile(await core.view.casc.getFile(diffuseFileDataID));
+					await blp.saveToFile(path.join(dir, diffuseFileDataID + '.png'), 'image/png', false);
+					const mat = materials[i] = { scale: 1, id: diffuseFileDataID };
+					if (texParams && texParams[i]) {
+						const params = texParams[i];
+						mat.scale = Math.pow(2, (params.flags & 0xF0) >> 4);
+					}
+				}
+
+				// New JSON file to save material data
+				var materialJSON = '{ "chunkData" : [';				
+
+				// 1024x1024 image with 4 bytes per pixel
+				var pixelData = new Uint8ClampedArray(1024 * 1024 * 4);
+
+				// Writing a 1024x1024 image in 64x64 chunks
+				var bytesPerPixel     = 4;      // Each pixel has a R,G,B,A byte
+				var bytesPerColumn    = 262144; // A 'column' is 1024 pixels vertical (chunk)
+				var bytesPerRow       = 4096;   // A 'row' is 1024 pixels horizontal (chunk)
+				var bytesPerSubColumn = 16384;  // A 'subcolumn' is 64 pixels vertical (subchunk)
+				var bytesPerSubRow    = 256;    // a 'subrow' is 64 pixels horizontal (subchunk)
+				
+				let chunkID = 0;
+				const lines = [];
+				var tga = new TGA(fs.readFileSync('./src/images/TGATemplate.tga'));
+				// Loop Y first so we go left to right, top to bottom. Loop 16x16 subchunks to get the full chunk
+				for (let x = 0; x < 16; x++) {	
+					for (let y = 0; y < 16; y++) {
+							
+						const chunkIndex = (y * 16) + x;
+						const texChunk = texAdt.texChunks[chunkIndex];
+						const alphaLayers = texChunk.alphaLayers || [];
+						const textureLayers = texChunk.layers;						
+
+						for (let i = 0, n = texChunk.layers.length; i < n; i++) {
+							const mat = materials[texChunk.layers[i].textureId];
+							lines.push([chunkIndex, i, mat.id, mat.scale].join(','));
+							materialJSON += '{ "chunkIndex":"' + chunkIndex + '", "channel":"' + i + '", "id":"' + mat.id + '", "scale":"' + mat.scale + '" },';							
+						}
+
+						// If there is no texture data just skip it
+						if (textureLayers.length > 0) {
+							// If there is texture data, we need a base layer of red to flood the subchunk 							
+							for (let j = y * bytesPerColumn; j < (y * bytesPerColumn) + bytesPerColumn; j += bytesPerRow) { // 1024 pixels wide, 64 pixels high = 65536 * 4 bytes = 262144 (looping y axis)
+								// Now we need to loop the x axis, 64 pixels long								
+								for (let i = x * bytesPerSubRow; i < (x * bytesPerSubRow) + bytesPerSubRow; i += bytesPerPixel) { // 64 pixels, 4 bytes each = 256
+									var yloop = ((j / bytesPerRow) - (y * bytesPerColumn) / bytesPerRow);
+									var xloop = ((i / 4) - ((x * bytesPerSubRow) / 4));
+									var alphaIndex = (yloop * 64) + xloop;
+									pixelData[j + i + 0] = 255; // Red
+									if (textureLayers.length > 1) { // Green
+										//pixelData[j + i + 3] -= alphaLayers[1][alphaIndex];
+										//pixelData[j + i + 2] -= alphaLayers[1][alphaIndex];
+										pixelData[j + i + 1] = alphaLayers[1][alphaIndex];
+										pixelData[j + i + 0] -= alphaLayers[1][alphaIndex];										
+									}
+									if (textureLayers.length > 2) { // Blue
+										//pixelData[j + i + 3] -= alphaLayers[2][alphaIndex];
+										pixelData[j + i + 2] = alphaLayers[2][alphaIndex];
+										pixelData[j + i + 1] -= alphaLayers[2][alphaIndex];
+										//pixelData[j + i + 0] -= alphaLayers[2][alphaIndex];
+									}
+									if (textureLayers.length > 3) { // Alpha
+										pixelData[j + i + 3] = alphaLayers[3][alphaIndex];
+										pixelData[j + i + 2] -= alphaLayers[3][alphaIndex];
+										//pixelData[j + i + 1] -= alphaLayers[3][alphaIndex];
+										//pixelData[j + i + 0] -= alphaLayers[3][alphaIndex];
+									}									
+								}
+							}														
+						}						
+					}
+				}
+				
+				materialJSON = materialJSON.substring(0, materialJSON.length - 1); // remove tailing comma
+				materialJSON += ']}'; // Close the JSON data
+				//log.write(materialJSON);
+				var matJSON = JSON.parse(materialJSON);				
+				// Sort JSON data by chunkIndex	
+				matJSON.chunkData.sort(function(a, b) {
+					var keyA = parseInt(a.chunkIndex),
+					    keyB = parseInt(b.chunkIndex);
+					// Compare the 2 dates
+					if (keyA < keyB) return -1;
+					if (keyA > keyB) return 1;
+					return 0;
+				  });				
+				
+				const jsonPath = path.join(dir, 'matData_' + prefix + '.json');
+				try { fs.writeFileSync(jsonPath, JSON.stringify(matJSON.chunkData));
+					} catch (err) { console.error(err); }
+				
+				const tgaPath = path.join(dir, 'tex_' + prefix + '.tga');
+				tga.pixels = pixelData;
+				var buftga = TGA.createTgaBuffer(tga.width, tga.height, tga.pixels);
+				fs.writeFileSync(tgaPath, buftga);
+
+				const metaOut = path.join(dir, 'tex_' + prefix + '.csv');
+				await fsp.writeFile(metaOut, lines.join('\n'), 'utf8');
+
+			} else if (quality === -1) {
 				// Export alpha maps.
 
 				// Create a 2D canvas for drawing the alpha maps.
