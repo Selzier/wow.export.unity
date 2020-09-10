@@ -2,6 +2,7 @@
 	wow.export (https://github.com/Kruithne/wow.export)
 	Authors: Kruithne <kruithne@gmail.com>
 	License: MIT
+	Build: node ./build.js win-x64
  */
 const util = require('util');
 const core = require('../../core');
@@ -31,6 +32,7 @@ const ExportHelper = require('../../casc/export-helper');
 const M2Exporter = require('../../3D/exporters/M2Exporter');
 const WMOExporter = require('../../3D/exporters/WMOExporter');
 const CSVWriter = require('../../3D/writers/CSVWriter');
+const { SSL_OP_SSLEAY_080_CLIENT_DH_BUG } = require('constants');
 
 const MAP_SIZE = constants.GAME.MAP_SIZE;
 const TILE_SIZE = constants.GAME.TILE_SIZE;
@@ -407,8 +409,7 @@ class ADTExporter {
 
 				// Export the raw diffuse textures to disk.
 				const materials = new Array(materialIDs.length);
-				var materialCount = materials.length; // TEMP REMOVE ME
-				for (let i = 0, n = materials.length; i < n; i++) {
+				for (let i = 0, n = materials.length; i < n; i++) {					
 					const diffuseFileDataID = materialIDs[i];
 					const blp = new BLPFile(await core.view.casc.getFile(diffuseFileDataID));
 					await blp.saveToFile(path.join(dir, diffuseFileDataID + '.png'), 'image/png', false);
@@ -420,10 +421,22 @@ class ADTExporter {
 				}
 
 				// New JSON file to save material data
-				var materialJSON = '{ "chunkData" : [';				
-
+				var materialJSON = '{ "chunkData" : {';
+				var pixelSet = new Uint8ClampedArray(1024 * 1024 * 4);
+				var pixelData = new Array(Math.ceil(materialIDs.length/4));
+				log.write(Math.ceil(materialIDs.length/4));
+				log.write(pixelData.length);
+				for (var p = 0; p < pixelData.length; p++){
+					pixelData[p] = new Uint8ClampedArray(1024 * 1024 * 4);
+					log.write("Image" + p);
+				}
+				//pixelData = new Array<new Uint8ClampedArray(1024 * 1024 * 4)>();
+				if (pixelData[1] === undefined){
+					log.write("bro....");
+				}
 				// 1024x1024 image with 4 bytes per pixel
-				var pixelData = new Uint8ClampedArray(1024 * 1024 * 4);
+				//var pixelData = new Array<new Uint8ClampedArray(1024 * 1024 * 4)>(Math.ceil(materialIDs/4)); // We will need a separate TGA image for every 4 textures
+				//Uint8ClampedArray(1024 * 1024 * 4);
 
 				// Writing a 1024x1024 image in 64x64 chunks
 				var bytesPerPixel     = 4;      // Each pixel has a R,G,B,A byte
@@ -435,6 +448,83 @@ class ADTExporter {
 				let chunkID = 0;
 				const lines = [];
 				var tga = new TGA(fs.readFileSync('./src/images/TGATemplate.tga'));
+
+				// Populate the JSON data for all 256 subchunks
+				for (let x = 0; x < 16; x++) {	
+					for (let y = 0; y < 16; y++) {
+						const chunkIndex = (y * 16) + x;
+						const texChunk = texAdt.texChunks[chunkIndex];
+						
+						// New parent object named with index "0", "1", "2", etc
+						materialJSON += '"' + chunkIndex + '": [';
+						
+						if (texChunk.layers.length == 0) {
+							materialJSON += '{"id":"' + 0 + '","scale":"' + 0 + '"},';
+						}
+
+						for (let i = 0, n = texChunk.layers.length; i < n; i++) { // COULD BE ZERO!!!
+							const mat = materials[texChunk.layers[i].textureId];
+							materialJSON += '{"id":"' + mat.id + '","scale":"' + mat.scale + '"},';
+							lines.push([chunkIndex, i, mat.id, mat.scale].join(','));
+							//materialJSON += '{ "chunkIndex":"' + chunkIndex + '", "channel":"' + i + '", "id":"' + mat.id + '", "scale":"' + mat.scale + '" },';
+						}
+						materialJSON = materialJSON.substring(0, materialJSON.length - 1); // remove tailing comma
+						materialJSON += '],'; // Close the subchunk array
+					}
+				}				
+				materialJSON = materialJSON.substring(0, materialJSON.length - 1); // remove tailing comma
+				materialJSON += '}}'; // Close the JSON data
+				log.write(materialJSON);
+				var matJSON = JSON.parse(materialJSON);
+				
+				/*
+				// Sort JSON data by chunkIndex	
+				matJSON.chunkData.sort(function(a, b) {
+					var keyA = parseInt(a.chunkIndex),
+						keyB = parseInt(b.chunkIndex);
+					// Compare the 2 dates
+					if (keyA < keyB) return -1;
+					if (keyA > keyB) return 1;
+					return 0;
+				});*/
+				log.write("Databegin: ");
+				/*
+				var matIds = [];
+				for (var i in matJSON.chunkData) {
+					if (matJSON.chunkData[i].channel == 0){
+						//log.write(JSON.stringify(matJSON.chunkData[i].id));
+						matIds.push(matJSON.chunkData[i].id);
+					}
+				}
+				
+				// Checking all 256 subchunks to make sure the Base Material is the same
+				var uniqueBaseMatIds = Array.from(new Set(matIds));
+				if (uniqueBaseMatIds.length > 1){
+					log.write("WARNING! Found more than 1 Base Materials for " + prefix);
+				}
+								
+				for (var i in matJSON.chunkData) {
+					if (matJSON.chunkData[i].channel != 0){
+						//log.write(JSON.stringify(matJSON.chunkData[i].id));
+						matIds.push(matJSON.chunkData[i].id);
+					}
+				}
+
+				var uniqueAlphaMatIds = Array.from(new Set(matIds));
+				for (var i in uniqueAlphaMatIds){
+					//log.write("Texture" + i + ": " + uniqueAlphaMatIds[i]);
+					// 0 is base texture
+					// 1-x are alpha textures
+					// If more than 1 Base Materials are found, this will be incorrect
+				}*/
+
+				
+				// Now before we draw each sub-chunk to TGA, we need to check it's texture list in json.
+				// Based on what order the textures are for that sub-chunk, we may need to draw RGBA in a different order than 0,1,2,3	
+				for (let q=0; q < materialIDs.length; q++){
+					log.write(materialIDs[q]);
+				}				
+
 				// Loop Y first so we go left to right, top to bottom. Loop 16x16 subchunks to get the full chunk
 				for (let x = 0; x < 16; x++) {	
 					for (let y = 0; y < 16; y++) {
@@ -442,13 +532,28 @@ class ADTExporter {
 						const chunkIndex = (y * 16) + x;
 						const texChunk = texAdt.texChunks[chunkIndex];
 						const alphaLayers = texChunk.alphaLayers || [];
-						const textureLayers = texChunk.layers;						
+						const textureLayers = texChunk.layers;
+						log.write("alphaLayers length: " + alphaLayers.length);
 
-						for (let i = 0, n = texChunk.layers.length; i < n; i++) {
-							const mat = materials[texChunk.layers[i].textureId];
-							lines.push([chunkIndex, i, mat.id, mat.scale].join(','));
-							materialJSON += '{ "chunkIndex":"' + chunkIndex + '", "channel":"' + i + '", "id":"' + mat.id + '", "scale":"' + mat.scale + '" },';							
+						/*
+						var texIndex = materialIDs.indexOf(parseInt(matJSON.chunkData[chunkIndex][1].id)); // doesn't work!						
+						//log.write("Index: " + texIndex + ", Alphalayer Length: " + alphaLayers.length);
+						if(alphaLayers[texIndex] === undefined) {
+							log.write(chunkIndex + " alphalayer " + texIndex + " undefined! TexID: " + matJSON.chunkData[chunkIndex][1].id);
 						}
+						//log.write(alphaLayers[texIndex][0]);
+						
+						for (let m = 0; m < matJSON.chunkData[chunkIndex].length; m++){
+							for (let n = 0; n < materialIDs.length; n++){
+								if (materialIDs[n] == matJSON.chunkData[chunkIndex][m].id){
+									// Match
+									//log.write("FoundMatch. Subchunk " + chunkIndex + " channel " + m + " has texture " + materialIDs[n]);
+									// Need to connect this to the pixel loop below
+								}								
+							}							
+						}*/
+
+						//log.write(chunkIndex + ": " + matJSON.chunkData[chunkIndex][1].id); // This is correct	
 
 						// If there is no texture data just skip it
 						if (textureLayers.length > 0) {
@@ -459,53 +564,159 @@ class ADTExporter {
 									var yloop = ((j / bytesPerRow) - (y * bytesPerColumn) / bytesPerRow);
 									var xloop = ((i / 4) - ((x * bytesPerSubRow) / 4));
 									var alphaIndex = (yloop * 64) + xloop;
-									pixelData[j + i + 0] = 255; // Red
-									if (textureLayers.length > 1) { // Green
+									
+									// The first TGA image will have base texture flooded with red.
+									if (pixelData[0][j + i + 0] === undefined){
+										log.write("pixeldata[0]" + [j + i + 0] + " is undefined!");
+									}
+									pixelData[0][j + i + 0] = 255; // Red: (186865) 
+									//log.write("Made it here");
+									
+									// Need to check some value and match to a value in uniqueAlphaMatIds
+									// What is this subchunk's layer 1 texture id?							
+									// GREEN is the 2nd texture in the Texture Palette. For pvpzone02/31_31 the palette is:
+									
+									//         materialIDs(0) materialIDs(1) materialIDs(2) materialIDs(3) 
+									// Image 0, R: 186865      G: 186798      B: 186868      A: 186870 
+									
+									//         materialIDs(4) materialIDs(5)
+									// Image 1, R: 186883      G: 188516 
+
+									// Now we need to draw in the order of: matJSON.chunkData[chunkIndex][1].id, matJSON.chunkData[chunkIndex][2].id, etc
+									// And subtract from the previous layer(s) while doing so
+									// RBGA, RBGAs will be drawn in different orders for each chunkIndex
+
+									// start at 1, flood red for layer 0
+									for (var k = 1; k < matJSON.chunkData[chunkIndex].length; k++){
+										// k = 1, random materialID. This could be any RGBA, RGBA color! 
+										// match index of materialID to 
+										if (matJSON.chunkData[chunkIndex][k] === undefined){
+											log.write("error!...!");
+										}else{
+											//log.write("matJSON.chunkData[chunkIndex][k].id" + matJSON.chunkData[chunkIndex][k].id);
+										}
+										var currentID = matJSON.chunkData[chunkIndex][k].id;
+										var currentIndex = -1;
+										for (var l = 0; l < materialIDs.length; l++){
+											if (materialIDs[l] == currentID){
+												currentIndex = l;
+											}
+										}
+										if (currentIndex == -1){
+											log.write("ERROR: Index is still -1 after loop:" + currentID);
+										}
+										var texIndex = currentIndex;										
+										// alphaLayers is an array equal to length of textures and in the same order as materialIDs
+										// each array item is an Array(64 * 64)
+										// alphaLayers[0] is filled with red (255)
+
+										// Red   / 0 has everything subtracted from it
+										// Green / 1 has Blue & Alpha subtracted from it
+										// Blue  / 2 has Alpha subtracted from it
+										// --> Need to EITHER subract all previous of only the single previous
+										
+										// Calculate image index, 1 TGA image for each 4 textures. index 0 includes base texture on channel 0
+										var imageIndex = Math.floor(texIndex/4);
+
+										// 0-3 RGBA. If imageIndex=0 this should not be 0 because that is basetexture
+										var channelIndex = texIndex % 4;
+
+										// array  whichTGA   Pixel|chanel
+										if (pixelData[imageIndex] === undefined){
+											log.write("pixelData[" + imageIndex +"] is undefined");
+										}
+										if (pixelData[imageIndex][j + i + channelIndex] === undefined){
+											log.write("pixeldata[" + imageIndex + "]" + ", channelIndex:" + channelIndex + " is undefined!");
+										}
+										if (alphaLayers[k] === undefined){
+											log.write("alphaLayers[k] is undefined: " + texIndex + ". Alphalayers length: " + alphaLayers.length + ", Chunk: " + chunkIndex);
+										}
+										if (alphaLayers[k][alphaIndex] === undefined){
+											log.write("alphaLayers[" + k + "] alphaIndex[" + alphaIndex + "] is undefined!");
+										}
+										// Write the actual pixel data
+										pixelData[imageIndex][j + i + channelIndex] = alphaLayers[k][alphaIndex];
+										
+										//for (var m = 0; m < imageIndex; m++){ // TGA Image Loop
+											// Need to subtract all layers up to channelIndex
+											// ChannelIndex is 0-3
+											// example; imageIndex = 1;
+											var subtractImages = imageIndex % 4; // subtract all 4 channels (full image)
+											var subtractChannels = channelIndex - 1; // subtract only certain channels
+
+											for (var m = 0; m < subtractImages; m++){ // All previous layers except this one
+												pixelData[m][j + i + 0] -= alphaLayers[k][alphaIndex];
+												pixelData[m][j + i + 1] -= alphaLayers[k][alphaIndex];
+												pixelData[m][j + i + 2] -= alphaLayers[k][alphaIndex];
+												pixelData[m][j + i + 3] -= alphaLayers[k][alphaIndex];
+											}
+
+											for (var n = 0; n < subtractChannels; n++){
+												pixelData[imageIndex][j + i + n] -= alphaLayers[k][alphaIndex];
+											}
+										//}
+									}
+
+									/*
+									if (textureLayers.length > 1) { // Green: (186798) 
+
+									// Calculate this subchunks channel 1 texture id
+										var channel1id = matJSON.chunkData[chunkIndex][1].id;
+										var texIndex = materialIDs.indexOf(parseInt(matJSON.chunkData[chunkIndex][1].id)); // doesn't work!										
+										
+										if (texIndex < 0 || texIndex > 5){
+											//log.write(texIndex);
+										}
 										//pixelData[j + i + 3] -= alphaLayers[1][alphaIndex];
 										//pixelData[j + i + 2] -= alphaLayers[1][alphaIndex];
-										pixelData[j + i + 1] = alphaLayers[1][alphaIndex];
-										pixelData[j + i + 0] -= alphaLayers[1][alphaIndex];										
+										pixelData[j + i + 1] = alphaLayers[1][alphaIndex]; 
+										pixelData[j + i + 0] -= alphaLayers[1][alphaIndex];
 									}
-									if (textureLayers.length > 2) { // Blue
+									
+									if (textureLayers.length > 2) { // Blue										
+
 										//pixelData[j + i + 3] -= alphaLayers[2][alphaIndex];
 										pixelData[j + i + 2] = alphaLayers[2][alphaIndex];
 										pixelData[j + i + 1] -= alphaLayers[2][alphaIndex];
 										//pixelData[j + i + 0] -= alphaLayers[2][alphaIndex];
 									}
-									if (textureLayers.length > 3) { // Alpha
+									
+									if (textureLayers.length > 3) { // Alpha										
+
 										pixelData[j + i + 3] = alphaLayers[3][alphaIndex];
 										pixelData[j + i + 2] -= alphaLayers[3][alphaIndex];
 										//pixelData[j + i + 1] -= alphaLayers[3][alphaIndex];
 										//pixelData[j + i + 0] -= alphaLayers[3][alphaIndex];
-									}									
+									}*/
 								}
 							}														
 						}						
 					}
 				}
 				
-				materialJSON = materialJSON.substring(0, materialJSON.length - 1); // remove tailing comma
-				materialJSON += ']}'; // Close the JSON data
-				//log.write(materialJSON);
-				var matJSON = JSON.parse(materialJSON);				
-				// Sort JSON data by chunkIndex	
-				matJSON.chunkData.sort(function(a, b) {
-					var keyA = parseInt(a.chunkIndex),
-					    keyB = parseInt(b.chunkIndex);
-					// Compare the 2 dates
-					if (keyA < keyB) return -1;
-					if (keyA > keyB) return 1;
-					return 0;
-				  });				
-				
+				/*
+				for (let i = 0; i < matJSON.chunkData.length; i++){
+					var object = matJSON.chunkData[i];
+					for (var key in object){
+						var name = key;
+						var value = object[key];
+						log.write(name + ": " + value);
+					}
+				}*/
+
+				//var blah = matJSON.chunkData.sort((a,b) => matJSON.chunkData.filter(v => v===a.chunkIndex).length - matJSON.chunkData.filter(v => v===b.chunkIndex).length).pop();
+				//log.write("Most Common: " + JSON.stringify(blah));
+				log.write("finished loop");
 				const jsonPath = path.join(dir, 'matData_' + prefix + '.json');
-				try { fs.writeFileSync(jsonPath, JSON.stringify(matJSON.chunkData));
+				try { fs.writeFileSync(jsonPath, JSON.stringify(matJSON));
 					} catch (err) { console.error(err); }
 				
-				const tgaPath = path.join(dir, 'tex_' + prefix + '.tga');
-				tga.pixels = pixelData;
-				var buftga = TGA.createTgaBuffer(tga.width, tga.height, tga.pixels);
-				fs.writeFileSync(tgaPath, buftga);
+				for (var t = 0; t < pixelData.length; t++) {
+					const tgaPath = path.join(dir, 'splatmap_' + prefix + '_' + t.toString() + '.tga');
+					tga.pixels = pixelData[t];
+					var buftga = TGA.createTgaBuffer(tga.width, tga.height, tga.pixels);
+					fs.writeFileSync(tgaPath, buftga);
+				}
 
 				const metaOut = path.join(dir, 'tex_' + prefix + '.csv');
 				await fsp.writeFile(metaOut, lines.join('\n'), 'utf8');
