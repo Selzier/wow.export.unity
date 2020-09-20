@@ -33,6 +33,7 @@ const M2Exporter = require('../../3D/exporters/M2Exporter');
 const WMOExporter = require('../../3D/exporters/WMOExporter');
 const CSVWriter = require('../../3D/writers/CSVWriter');
 const { SSL_OP_SSLEAY_080_CLIENT_DH_BUG } = require('constants');
+const LoaderGenerics = require('../loaders/LoaderGenerics');
 
 const MAP_SIZE = constants.GAME.MAP_SIZE;
 const TILE_SIZE = constants.GAME.TILE_SIZE;
@@ -267,25 +268,76 @@ class ADTExporter {
 		const firstChunkY = firstChunk.position[1];
 
 		const splitTextures = quality >= 8192;
-	
+
+		// Need to save height values to JSON
+		var heightmapJSON = '{ "heightmap" : [';
+		var testCount = 0;
+
+		// Writing a 257x257 image in 17x17 overlapping chunks
+		var bytesPerPixel     = 4;      // Each pixel has a R,G,B,A byte
+		var bytesPerColumn    = 18496; // A 'column' is 257 pixels vertical (chunk): bytesPerRow * b
+		var bytesPerRow       = 1028;   // A 'row' is 257 pixels horizontal (chunk): a * 4
+		var bytesPerSubColumn = 1156;  // A 'subcolumn' is 17 pixels vertical (subchunk): bytesPerSubRow * b
+		var bytesPerSubRow    = 68;    // A 'subrow' is 17 pixels horizontal (subchunk): b * 4
+
+		// Create a 2D canvas for drawing the alpha maps.
+		const canvas = document.createElement('canvas');
+		const ctx = canvas.getContext('2d');
+
+		// Heightmaps will be 272x272, we're not up-scaling here.
+		canvas.width = 257;
+		canvas.height = 257;
+		var imageData = ctx.createImageData(257, 257);
+		log.write("imageData Length: " + imageData.data.length);
+
+		for (var i = 0; i < imageData.data.length; i += 4) {
+			imageData.data[i + 0] = 255;
+			imageData.data[i + 1] = 0;
+			imageData.data[i + 2] = 0;
+			imageData.data[i + 3] = 255;
+		}
+
+		for (let x = 0; x < 16; x++) {	
+			for (let y = 0; y < 16; y++) {				
+				/*
+				for (let j = y * bytesPerColumn; j < (y * bytesPerColumn) + bytesPerColumn; j += bytesPerRow) { // 272 pixels wide, 17 pixels high = 4624 * 4 bytes = 18496 (looping y axis)
+					for (let i = x * bytesPerSubRow; i < (x * bytesPerSubRow) + bytesPerSubRow; i += bytesPerPixel) { // 17 pixels, 4 bytes each = 68
+						var yloop = ((j / bytesPerRow) - (y * bytesPerColumn) / bytesPerRow);
+						var xloop = ((i / 4) - ((x * bytesPerSubRow) / 4));
+						var pixelIndex = (yloop * 16) + xloop;
+						//log.write(pixelIndex);
+						//imageData.data[(pixelIndex) + 0] = 255;
+						//imageData.data[(pixelIndex) + 1] = 255;
+						//imageData.data[(pixelIndex) + 2] = 255;
+						//imageData.data[(pixelIndex) + 3] = 255;
+					}
+				}*/
+			}
+		}
+			
+		var vertexHeightList = [66049]; // Some are overlapping
+		var hCount = 0;
+
 		let ofs = 0;
 		let chunkID = 0;
-		for (let x = 0, midX = 0; x < 16; x++) {
-			for (let y = 0; y < 16; y++) {
+		for (let x = 0, midX = 0; x < 16; x++) { // chunk
+			for (let y = 0; y < 16; y++) { // chunk
 				const indices = [];
-
+				//log.write("X: " + x + ", Y: " + y);
 				const chunkIndex = (x * 16) + y;
 				const chunk = rootAdt.chunks[chunkIndex];
 
 				const chunkX = chunk.position[0];
 				const chunkY = chunk.position[1];
-				const chunkZ = chunk.position[2];
+				const chunkZ = chunk.position[2];						
 
-				for (let row = 0, idx = 0; row < 17; row++) {
+				for (let row = 0, idx = 0; row < 17; row++) { // subchunk
 					const isShort = !!(row % 2);
 					const colCount = isShort ? 8 : 9;
+					//log.write("Row: " + row + ", IDX: " + idx);
 
 					for (let col = 0; col < colCount; col++) {
+						//log.write("Col: " + col + ", colCount: " + colCount);
 						let vx = chunkY - (col * UNIT_SIZE);
 						let vy = chunk.vertices[idx] + chunkZ;
 						let vz = chunkX - (row * UNIT_SIZE_HALF);
@@ -297,7 +349,149 @@ class ADTExporter {
 						vertices[vIndex + 0] = vx;
 						vertices[vIndex + 1] = vy;
 						vertices[vIndex + 2] = vz;
+						
+						let vyMinus8 = chunk.vertices[idx-8] + chunkZ;
+						let vyMinus9 = chunk.vertices[idx-9] + chunkZ;
+						let vyPlus8 = chunk.vertices[idx+8] + chunkZ;
+						let vyPlus9 = chunk.vertices[idx+9] + chunkZ;						
 
+						if (x < 15){
+							// Long Column; Don't draw bottom row
+							if (!isShort && y < 15 && row < 16){ // Long Column
+								if (col == 0){
+									// Vertex 0 - Upper Left
+									vertexHeightList[hCount] = vy;
+									hCount++;
+								}else if (col < 8){
+									// Down 1 vertex
+									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									hCount++;
+									vertexHeightList[hCount] = vy;
+									hCount++;
+								}else if (col == 8){ // Bottom Left Corner
+									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									hCount++;
+									//vertexHeightList[hCount] = vy; // Not drawing the bottom row of pixels
+								}
+
+							// Long Column; Include bottom row
+							}else if (!isShort && y == 15 && row < 16){
+								if (col == 0){
+									// Vertex 0 - Upper Left
+									vertexHeightList[hCount] = vy;
+									hCount++;
+								}else{
+									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									hCount++;
+									vertexHeightList[hCount] = vy; // Include bottom row of pixels
+									hCount++;
+								}
+
+							}else if (isShort && y < 15 && row < 16){ // Short Column; Don't draw bottom row
+								vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle
+								hCount++;
+								vertexHeightList[hCount] = vy;
+								hCount++;
+
+							}else if (isShort && y == 15 && row < 16){ // Short Column; Include bottom row
+								if (col < 7){
+									vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle
+									hCount++;
+									vertexHeightList[hCount] = vy;
+									hCount++;
+								}else if (col == 7){
+									vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle
+									hCount++;
+									vertexHeightList[hCount] = vy;
+									hCount++;
+									vertexHeightList[hCount] = (vyMinus8 + vyPlus9) / 2; // Include bottom vertex
+									hCount++;
+								}							
+							}
+						}
+						else if (x == 15){ // Include Right Edge
+							// Long Column; Don't draw bottom row
+							if (!isShort && y < 15){ // Long Column
+								if (col == 0){
+									// Vertex 0 - Upper Left
+									vertexHeightList[hCount] = vy;
+									hCount++;
+								}else if (col < 8){
+									// Down 1 vertex
+									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									hCount++;
+									vertexHeightList[hCount] = vy;
+									hCount++;
+								}else if (col == 8){ // Bottom Left Corner
+									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									hCount++;
+									//vertexHeightList[hCount] = vy; // Not drawing the bottom row of pixels
+								}
+
+							// Long Column; Include bottom row
+							}else if (!isShort && y == 15){
+								if (col == 0){
+									// Vertex 0 - Upper Left
+									vertexHeightList[hCount] = vy;
+									hCount++;
+								}else if (col < 8){
+									// Down 1 vertex
+									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									hCount++;
+									vertexHeightList[hCount] = vy;
+									hCount++;
+								}else if (col == 8){ // Bottom Pixel
+									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									hCount++;
+									vertexHeightList[hCount] = vy; // Include bottom row of pixels
+									hCount++;
+								}
+
+							}else if (isShort && y < 15){ // Short Column; Don't draw bottom row
+								vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle
+								hCount++;
+								vertexHeightList[hCount] = vy;
+								hCount++;							
+
+							}else if (isShort && y == 15){ // Short Column; Include bottom row
+								if (col < 7){
+									vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle
+									hCount++;
+									vertexHeightList[hCount] = vy;
+									hCount++;
+								}else if (col == 7){
+									vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle
+									hCount++;
+									vertexHeightList[hCount] = vy;
+									hCount++;
+									vertexHeightList[hCount] = (vyMinus8 + vyPlus9) / 2; // Include bottom vertex
+									hCount++;
+								}							
+							}
+						}
+						
+						/*
+						//heightList[hCount-1] = vy - ((heightList[hCount-2] + vy) /2);
+						if (isShort && col == 7){
+							heightList[hCount-1] = vy;
+							heightList[hCount] = vy;
+							heightList[hCount+1] = vy; // Last pixel of short column need a before and after pixel
+							hCount+=2;
+						}else if (isShort){
+							heightList[hCount-1] = vy;
+							heightList[hCount] = vy;
+							hCount+=2;
+						//}else if( !isShort && col == 8 ){
+						//	heightList[hCount] = vy;
+						//	hCount+=2; // 2?
+						}else if (!isShort){
+							heightList[hCount] = vy;
+							heightList[hCount+1] = vy;
+							hCount+=2;
+						}*/
+
+						heightmapJSON += vy + ','; // Save Y value to json
+						
 						const normal = chunk.normals[idx];
 						normals[vIndex + 0] = normal[0] / 127;
 						normals[vIndex + 1] = normal[1] / 127;
@@ -382,10 +576,144 @@ class ADTExporter {
 					obj.addMesh(chunkID, indices, 'tex_' + this.tileID);
 				}
 				chunkMeshes[chunkIndex] = indices;
-
 				chunkID++;
+				log.write("TotalPixelCount / hCount: " + hCount);
 			}
 		}
+				
+		hCount = 0;
+		var maxHeight = (Math.max(...vertexHeightList));
+		var minHeight = (Math.min(...vertexHeightList));
+		log.write("Max: " + maxHeight + ", Min: " + minHeight);		
+
+		//imageData = ctx.createImageData(257, 257);
+		var heightList = [66049];
+		var vIndex = 0;				
+		/*for (i = 0; i < 66048; i++){
+			var normalized = this.Normalize(vertexHeightList[Math.floor(vIndex)], maxHeight, minHeight);
+			heightList[i] = normalized;
+			vIndex += 0.5;
+			imageData.data[(i * 4) + 0] = normalized * 255;
+			imageData.data[(i * 4) + 1] = normalized * 255;
+			imageData.data[(i * 4) + 2] = normalized * 255; //normalized * 255;
+			imageData.data[(i * 4) + 3] = 255;
+		}*/
+
+		/*for (let x = 0, midX = 0; x < 16; x++) { // chunk
+			for (let y = 0; y < 16; y++) { // chunk
+				for (let row = 0, idx = 0; row < 16; row++) { // subchunk
+					for (let col = 0; col < 16; col ++){ // subchunk
+						var normalized = this.Normalize(vertexHeightList[hCount], maxHeight, minHeight);
+						imageData.data[(hCount * 4) + 0] = normalized * 255;
+						imageData.data[(hCount * 4) + 1] = normalized * 255;
+						imageData.data[(hCount * 4) + 2] = normalized * 255; //normalized * 255;
+						imageData.data[(hCount * 4) + 3] = 255;
+						hCount++;
+					}
+				}
+			}
+		}*/
+
+		var index = 0;
+		var shortColumn = false;
+		var vertexCounter = 0;
+		/*
+		for (i = 0; i < vertexHeightList.length; i++) { // 37120
+			if (!shortColumn){ // Long Column (9 verts)
+				if (vertexCounter < 8){					
+					var normalized = this.Normalize(vertexHeightList[i], maxHeight, minHeight);
+					var normalized2 = this.Normalize(vertexHeightList[i+1], maxHeight, minHeight);
+					var midpoint = (normalized + normalized2) / 2;
+					heightList[index] = normalized;
+					heightList[index+1] = midpoint;
+					index+=2;
+				} else if (vertexCounter == 8){
+					var normalized = this.Normalize(vertexHeightList[i], maxHeight, minHeight);
+					heightList[index] = normalized;
+					index+=1;
+					shortColumn = true;
+					vertexCounter = 0;
+				}
+			}else{ // Short Column (8 verts)
+				if (vertexCounter < 7){
+					var normalized = this.Normalize(vertexHeightList[i], maxHeight, minHeight); // center vert				
+					var normalized2 = this.Normalize(vertexHeightList[i-9], maxHeight, minHeight); // upper left vert
+					var normalized3 = this.Normalize(vertexHeightList[i+8], maxHeight, minHeight); // upper right vert
+					var midpoint = (normalized2 + normalized3) / 2;
+	
+					heightList[index-1] = midpoint;
+					heightList[index] = normalized;
+					index+=2;
+				}else if (vertexCounter == 7){
+					var normalized = this.Normalize(vertexHeightList[i], maxHeight, minHeight); // center vert				
+					var normalized2 = this.Normalize(vertexHeightList[i-9], maxHeight, minHeight); // upper left vert
+					var normalized3 = this.Normalize(vertexHeightList[i+8], maxHeight, minHeight); // upper right vert
+					var normalized4 = this.Normalize(vertexHeightList[i-8], maxHeight, minHeight); // lower left vert
+					var normalized5 = this.Normalize(vertexHeightList[i+9], maxHeight, minHeight); // lower right vert
+					var midpoint = (normalized2 + normalized3) / 2;
+					var midpoint2 = (normalized4 + normalized5) / 2;
+	
+					heightList[index-1] = midpoint;
+					heightList[index] = normalized;
+					heightList[index+1] = midpoint2;
+					index+=3;
+					shortColumn = false;
+					vertexCounter = 0;
+				}
+			}			
+			vertexCounter++
+		}
+
+		log.write("Total pixelcount: " + index);
+		*/
+
+		// DRAW HEIGHTMAP
+		for (let x = 0, midX = 0; x < 16; x++) { // chunk
+			for (let y = 0; y < 16; y++) { 		// chunk
+				//
+				imageData = ctx.createImageData(16, 16);
+				var color =  x * y;
+				for (let col = 0; col < 16; col ++){ // subchunk, 17 pixels
+					for (let row = 0, idx = 0; row < 16; row++) { // subchunk
+						var normalized = this.Normalize(vertexHeightList[hCount], maxHeight, minHeight);
+						var pixIndex = ((row * 16) + (col)); //((x * bytesPerSubColumn) + (y * bytesPerRow) + row + col);
+						imageData.data[(pixIndex * 4) + 0] = normalized * 255;
+						imageData.data[(pixIndex * 4) + 1] = normalized * 255;
+						imageData.data[(pixIndex * 4) + 2] = normalized * 255; //normalized * 255;
+						imageData.data[(pixIndex * 4) + 3] = 255;
+
+						//log.write(normalized);
+						hCount++;
+						//color++;						
+						idx++; // not using
+						midX++; // not using
+					}
+				}				
+				//
+				ctx.putImageData(imageData, x * 16, y * 16);
+			}
+		}
+
+		// Heightmap Image
+
+		ctx.putImageData(imageData, 0, 0);
+		const hmiprefix = this.tileID + '_' + (chunkID++);
+		const tilePath = path.join(dir, 'heightmap_' + hmiprefix + '.png');
+
+		const buf = await BufferWrapper.fromCanvas(canvas, 'image/png');
+		await buf.writeToFile(tilePath);
+
+		heightmapJSON = heightmapJSON.substring(0, heightmapJSON.length - 1); // remove tailing comma
+		heightmapJSON += ']}';
+
+		//log.write(testCount);
+		//log.write(heightmapJSON);
+
+		var heightmapParsedJSON = JSON.parse(heightmapJSON);		
+
+		const jsonPath = path.join(dir, 'heightData_' + this.tileID + '.json');
+		try { fs.writeFileSync(jsonPath, JSON.stringify(heightmapParsedJSON));
+			} catch (err) { log.write(err); }		
 
 		if (!splitTextures && quality !== -1)
 			mtl.addMaterial('tex_' + this.tileID, 'tex_' + this.tileID + '.png');
@@ -419,9 +747,7 @@ class ADTExporter {
 						mat.scale = Math.pow(2, (params.flags & 0xF0) >> 4);
 					}
 				}
-
-				// New JSON file to save material data
-				var materialJSON = '{ "chunkData" : {';
+				
 				var pixelSet = new Uint8ClampedArray(1024 * 1024 * 4);
 				var pixelData = new Array(Math.ceil(materialIDs.length/4));
 				log.write(Math.ceil(materialIDs.length/4));
@@ -430,24 +756,24 @@ class ADTExporter {
 					pixelData[p] = new Uint8ClampedArray(1024 * 1024 * 4);
 					log.write("Image" + p);
 				}
-				//pixelData = new Array<new Uint8ClampedArray(1024 * 1024 * 4)>();
-				if (pixelData[1] === undefined){
-					log.write("bro....");
-				}
+				//pixelData = new Array<new Uint8ClampedArray(1024 * 1024 * 4)>();				
 				// 1024x1024 image with 4 bytes per pixel
 				//var pixelData = new Array<new Uint8ClampedArray(1024 * 1024 * 4)>(Math.ceil(materialIDs/4)); // We will need a separate TGA image for every 4 textures
 				//Uint8ClampedArray(1024 * 1024 * 4);
 
 				// Writing a 1024x1024 image in 64x64 chunks
 				var bytesPerPixel     = 4;      // Each pixel has a R,G,B,A byte
-				var bytesPerColumn    = 262144; // A 'column' is 1024 pixels vertical (chunk)
-				var bytesPerRow       = 4096;   // A 'row' is 1024 pixels horizontal (chunk)
-				var bytesPerSubColumn = 16384;  // A 'subcolumn' is 64 pixels vertical (subchunk)
-				var bytesPerSubRow    = 256;    // a 'subrow' is 64 pixels horizontal (subchunk)
+				var bytesPerColumn    = 262144; // A 'column' is 1024 pixels vertical (chunk) bytesPerRow * b
+				var bytesPerRow       = 4096;   // A 'row' is 1024 pixels horizontal (chunk) a * 4
+				var bytesPerSubColumn = 16384;  // A 'subcolumn' is 64 pixels vertical (subchunk) bytesPerSubRow * b
+				var bytesPerSubRow    = 256;    // A 'subrow' is 64 pixels horizontal (subchunk) b * 4
 				
 				let chunkID = 0;
 				const lines = [];
 				var tga = new TGA(fs.readFileSync('./src/images/TGATemplate.tga'));
+				
+				// New JSON file to save material data
+				var materialJSON = '{ "chunkData" : {';
 
 				// Populate the JSON data for all 256 subchunks
 				for (let x = 0; x < 16; x++) {	
@@ -473,10 +799,20 @@ class ADTExporter {
 					}
 				}				
 				materialJSON = materialJSON.substring(0, materialJSON.length - 1); // remove tailing comma
-				materialJSON += '}}'; // Close the JSON data
-				log.write(materialJSON);
-				var matJSON = JSON.parse(materialJSON);
+				var fullJSON = materialJSON + '}, "splatmapData" : {'; // create JSON data to include splatmap data							
 				
+				materialJSON += '}}'; // Close the JSON data
+				var matJSON = JSON.parse(materialJSON);
+
+				for (let q=0; q < materialIDs.length; q++){
+					fullJSON += '"id' + q + '":"' + materialIDs[q] + '",';
+					//log.write(materialIDs[q]);
+				}
+				fullJSON = fullJSON.substring(0, fullJSON.length - 1); // remove tailing comma
+				fullJSON += '}}'; // Close the JSON data
+				log.write(fullJSON);
+				var fullParsedJSON = JSON.parse(fullJSON);
+
 				/*
 				// Sort JSON data by chunkIndex	
 				matJSON.chunkData.sort(function(a, b) {
@@ -520,10 +856,7 @@ class ADTExporter {
 
 				
 				// Now before we draw each sub-chunk to TGA, we need to check it's texture list in json.
-				// Based on what order the textures are for that sub-chunk, we may need to draw RGBA in a different order than 0,1,2,3	
-				for (let q=0; q < materialIDs.length; q++){
-					log.write(materialIDs[q]);
-				}				
+				// Based on what order the textures are for that sub-chunk, we may need to draw RGBA in a different order than 0,1,2,3								
 
 				// Loop Y first so we go left to right, top to bottom. Loop 16x16 subchunks to get the full chunk
 				for (let x = 0; x < 16; x++) {	
@@ -532,8 +865,7 @@ class ADTExporter {
 						const chunkIndex = (y * 16) + x;
 						const texChunk = texAdt.texChunks[chunkIndex];
 						const alphaLayers = texChunk.alphaLayers || [];
-						const textureLayers = texChunk.layers;
-						log.write("alphaLayers length: " + alphaLayers.length);
+						const textureLayers = texChunk.layers;						
 
 						/*
 						var texIndex = materialIDs.indexOf(parseInt(matJSON.chunkData[chunkIndex][1].id)); // doesn't work!						
@@ -588,8 +920,7 @@ class ADTExporter {
 
 									// start at 1, flood red for layer 0
 									for (var k = 1; k < matJSON.chunkData[chunkIndex].length; k++){
-										// k = 1, random materialID. This could be any RGBA, RGBA color! 
-										// match index of materialID to 
+										// k = 1, random materialID. This could be any RGBA, RGBA color! 										
 										if (matJSON.chunkData[chunkIndex][k] === undefined){
 											log.write("error!...!");
 										}else{
@@ -605,7 +936,7 @@ class ADTExporter {
 										if (currentIndex == -1){
 											log.write("ERROR: Index is still -1 after loop:" + currentID);
 										}
-										var texIndex = currentIndex;										
+										var texIndex = currentIndex;
 										// alphaLayers is an array equal to length of textures and in the same order as materialIDs
 										// each array item is an Array(64 * 64)
 										// alphaLayers[0] is filled with red (255)
@@ -613,7 +944,6 @@ class ADTExporter {
 										// Red   / 0 has everything subtracted from it
 										// Green / 1 has Blue & Alpha subtracted from it
 										// Blue  / 2 has Alpha subtracted from it
-										// --> Need to EITHER subract all previous of only the single previous
 										
 										// Calculate image index, 1 TGA image for each 4 textures. index 0 includes base texture on channel 0
 										var imageIndex = Math.floor(texIndex/4);
@@ -708,7 +1038,7 @@ class ADTExporter {
 				//log.write("Most Common: " + JSON.stringify(blah));
 				log.write("finished loop");
 				const jsonPath = path.join(dir, 'matData_' + prefix + '.json');
-				try { fs.writeFileSync(jsonPath, JSON.stringify(matJSON));
+				try { fs.writeFileSync(jsonPath, JSON.stringify(fullParsedJSON));
 					} catch (err) { console.error(err); }
 				
 				for (var t = 0; t < pixelData.length; t++) {
@@ -1181,6 +1511,8 @@ class ADTExporter {
 	static clearCache() {
 		wdtCache.clear();
 	}
+
+	Normalize(val, max, min) { return (val - min) / (max - min); }
 }
 
 module.exports = ADTExporter;
