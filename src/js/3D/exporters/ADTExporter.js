@@ -349,27 +349,39 @@ class ADTExporter {
 						vertices[vIndex + 0] = vx;
 						vertices[vIndex + 1] = vy;
 						vertices[vIndex + 2] = vz;
-						
+
+						// Saving heightmap data
+						let vY = chunk.vertices[idx] + chunkZ;
+						let vyMinus1 = chunk.vertices[idx-1] + chunkZ;
 						let vyMinus8 = chunk.vertices[idx-8] + chunkZ;
 						let vyMinus9 = chunk.vertices[idx-9] + chunkZ;
 						let vyPlus8 = chunk.vertices[idx+8] + chunkZ;
-						let vyPlus9 = chunk.vertices[idx+9] + chunkZ;						
+						let vyPlus9 = chunk.vertices[idx+9] + chunkZ;
+
+						/*if (x == 1 && y == 1){
+							vY = chunk.vertices[idx-9] + chunkZ;
+							vyMinus1 = chunk.vertices[idx-10] + chunkZ;
+							vyMinus8 = chunk.vertices[idx-17] + chunkZ;
+							vyMinus9 = chunk.vertices[idx-18] + chunkZ;
+							vyPlus8 = chunk.vertices[idx-1] + chunkZ;
+							vyPlus9 = chunk.vertices[idx] + chunkZ;
+						}*/
 
 						if (x < 15){
 							// Long Column; Don't draw bottom row
 							if (!isShort && y < 15 && row < 16){ // Long Column
 								if (col == 0){
 									// Vertex 0 - Upper Left
-									vertexHeightList[hCount] = vy;
+									vertexHeightList[hCount] = vY;
 									hCount++;
 								}else if (col < 8){
 									// Down 1 vertex
-									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									vertexHeightList[hCount] = (vyMinus1 + vy) / 2; // New Vertex in middle (531 = white)
 									hCount++;
-									vertexHeightList[hCount] = vy;
+									vertexHeightList[hCount] = vY;
 									hCount++;
 								}else if (col == 8){ // Bottom Left Corner
-									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									vertexHeightList[hCount] = (vyMinus1 + vY) / 2; // New Vertex in middle
 									hCount++;
 									//vertexHeightList[hCount] = vy; // Not drawing the bottom row of pixels
 								}
@@ -378,33 +390,33 @@ class ADTExporter {
 							}else if (!isShort && y == 15 && row < 16){
 								if (col == 0){
 									// Vertex 0 - Upper Left
-									vertexHeightList[hCount] = vy;
+									vertexHeightList[hCount] = vY;
 									hCount++;
 								}else{
-									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									vertexHeightList[hCount] = (vyMinus1 + vY) / 2; // New Vertex in middle
 									hCount++;
-									vertexHeightList[hCount] = vy; // Include bottom row of pixels
+									vertexHeightList[hCount] = vY; // Include bottom row of pixels
 									hCount++;
 								}
 
 							}else if (isShort && y < 15 && row < 16){ // Short Column; Don't draw bottom row
 								vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle
 								hCount++;
-								vertexHeightList[hCount] = vy;
+								vertexHeightList[hCount] = vY;
 								hCount++;
 
 							}else if (isShort && y == 15 && row < 16){ // Short Column; Include bottom row
 								if (col < 7){
-									vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle
+									vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle // THESE ARE ALL WRONG
 									hCount++;
-									vertexHeightList[hCount] = vy;
+									vertexHeightList[hCount] = vY; // THESE ARE ALL WRONG
 									hCount++;
-								}else if (col == 7){
-									vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle
+								}else if (col == 7){ // THESE ARE ALL WRONG
+									vertexHeightList[hCount] = (vyMinus9 + vyPlus8) / 2; // New Vertex in middle / THESE ARE ALL WRONG
 									hCount++;
-									vertexHeightList[hCount] = vy;
+									vertexHeightList[hCount] = vY; // THESE ARE ALL WRONG
 									hCount++;
-									vertexHeightList[hCount] = (vyMinus8 + vyPlus9) / 2; // Include bottom vertex
+									vertexHeightList[hCount] = (vyMinus8 + vyPlus9) / 2; // THESE ARE ALL WRONG
 									hCount++;
 								}							
 							}
@@ -418,12 +430,12 @@ class ADTExporter {
 									hCount++;
 								}else if (col < 8){
 									// Down 1 vertex
-									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									vertexHeightList[hCount] = (vyMinus1 + vy) / 2; // New Vertex in middle
 									hCount++;
 									vertexHeightList[hCount] = vy;
 									hCount++;
 								}else if (col == 8){ // Bottom Left Corner
-									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									vertexHeightList[hCount] = (vyMinus1 + vy) / 2; // New Vertex in middle
 									hCount++;
 									//vertexHeightList[hCount] = vy; // Not drawing the bottom row of pixels
 								}
@@ -432,16 +444,16 @@ class ADTExporter {
 							}else if (!isShort && y == 15){
 								if (col == 0){
 									// Vertex 0 - Upper Left
-									vertexHeightList[hCount] = vy;
+									vertexHeightList[hCount] = vy; // Never used???
 									hCount++;
 								}else if (col < 8){
 									// Down 1 vertex
-									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									vertexHeightList[hCount] = (vyMinus1 + vy) / 2; // New Vertex in middle
 									hCount++;
 									vertexHeightList[hCount] = vy;
 									hCount++;
 								}else if (col == 8){ // Bottom Pixel
-									vertexHeightList[hCount] = (vertexHeightList[hCount-1] + vy) / 2; // New Vertex in middle
+									vertexHeightList[hCount] = (vyMinus1 + vy) / 2; // New Vertex in middle
 									hCount++;
 									vertexHeightList[hCount] = vy; // Include bottom row of pixels
 									hCount++;
@@ -582,6 +594,14 @@ class ADTExporter {
 		}
 				
 		hCount = 0;
+		for (i = 0; i < 66048; i++){
+			if (isNaN(vertexHeightList[i])){
+				log.write(i + " is NOT a valid number: NaN!");
+				vertexHeightList[i] = 531;
+			}
+			
+		}
+		log.write("VertexHeightList length: " + vertexHeightList.length);
 		var maxHeight = (Math.max(...vertexHeightList));
 		var minHeight = (Math.min(...vertexHeightList));
 		log.write("Max: " + maxHeight + ", Min: " + minHeight);		
@@ -666,17 +686,33 @@ class ADTExporter {
 
 		log.write("Total pixelcount: " + index);
 		*/
-
+		var countpixels = 0;
 		// DRAW HEIGHTMAP
 		for (let x = 0, midX = 0; x < 16; x++) { // chunk
 			for (let y = 0; y < 16; y++) { 		// chunk
-				//
-				imageData = ctx.createImageData(16, 16);
+				
+				var xSize = 16;
+				var ySize = 16;
+				if (y == 15 && x < 15){							
+					imageData = ctx.createImageData(16, 17); // Inlude 17 pixels, bottom row
+					ySize = 17;
+				}else if (x == 15 && y < 15){
+					imageData = ctx.createImageData(17, 16); // Inlude 17 pixels, right edge
+					xSize = 17;
+				}else if (x == 15 && y == 15){
+					imageData = ctx.createImageData(17, 17); // Inlude 17 pixels, bottom row and right edge
+					xSize = 17;
+					ySize = 17;
+				}else{
+					imageData = ctx.createImageData(16, 16); // 16x16 block
+				}				
+				
 				var color =  x * y;
-				for (let col = 0; col < 16; col ++){ // subchunk, 17 pixels
-					for (let row = 0, idx = 0; row < 16; row++) { // subchunk
+				for (let col = 0; col < xSize; col ++){ // subchunk Y
+					for (let row = 0, idx = 0; row < ySize; row++) { // subchunk X
 						var normalized = this.Normalize(vertexHeightList[hCount], maxHeight, minHeight);
-						var pixIndex = ((row * 16) + (col)); //((x * bytesPerSubColumn) + (y * bytesPerRow) + row + col);
+						var pixIndex = ((row * xSize) + (col)); //((x * bytesPerSubColumn) + (y * bytesPerRow) + row + col);
+
 						imageData.data[(pixIndex * 4) + 0] = normalized * 255;
 						imageData.data[(pixIndex * 4) + 1] = normalized * 255;
 						imageData.data[(pixIndex * 4) + 2] = normalized * 255; //normalized * 255;
@@ -687,16 +723,23 @@ class ADTExporter {
 						//color++;						
 						idx++; // not using
 						midX++; // not using
+						countpixels++;
+						/*if ((x * 16) + y == 16){
+							imageData.data[(pixIndex * 4) + 0] = 255;
+							imageData.data[(pixIndex * 4) + 1] = 0;
+							imageData.data[(pixIndex * 4) + 2] = 0; //normalized * 255;
+							imageData.data[(pixIndex * 4) + 3] = 255;
+						}*/
 					}
-				}				
-				//
+				}
+				log.write("Countpixels: " + countpixels);
 				ctx.putImageData(imageData, x * 16, y * 16);
 			}
 		}
 
 		// Heightmap Image
 
-		ctx.putImageData(imageData, 0, 0);
+		//ctx.putImageData(imageData, 0, 0);
 		const hmiprefix = this.tileID + '_' + (chunkID++);
 		const tilePath = path.join(dir, 'heightmap_' + hmiprefix + '.png');
 
