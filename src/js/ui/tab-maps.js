@@ -8,6 +8,7 @@ const core = require('../core');
 const log = require('../log');
 const path = require('path');
 const listfile = require('../casc/listfile');
+const fs = require('fs');
 
 const WDCReader = require('../db/WDCReader');
 const DB_Map = require('../db/schema/Map');
@@ -160,20 +161,24 @@ const exportSelectedMap = async () => {
 	// when the path is trimmed, users end up in the right place. Bit hack-y, but quicker.
 	const markPath = path.join('maps', selectedMapDir, selectedMapDir);
 
+	var exportSessionData = [];
+	
 	for (const index of exportTiles) {
 		const adt = new ADTExporter(selectedMapID, selectedMapDir, index);
-
-		try {
-			await adt.export(dir, exportQuality);
+		try {			
+			exportSessionData.push(await adt.export(dir, exportQuality));
 			helper.mark(markPath, true);
 		} catch (e) {
 			helper.mark(markPath, false, e.message);
 		}
 	}
+	
+	var jsonDir = dir + "_ExportData.json";
+	try { fs.writeFileSync(jsonDir, JSON.stringify(exportSessionData)); //heightmapParsedJSON
+	} catch (err) { log.write(err); }
 
 	// Clear the internal ADTLoader cache.
 	ADTExporter.clearCache();
-
 	helper.finish();
 };
 
