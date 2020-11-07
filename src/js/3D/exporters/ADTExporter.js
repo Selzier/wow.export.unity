@@ -304,7 +304,7 @@ class ADTExporter {
 		let chunkID = 0;
 		for (let x = 0, midX = 0; x < 16; x++) { // chunk
 			for (let y = 0; y < 16; y++) { // chunk
-				const indices = [];				
+				const indices = [];
 				const chunkIndex = (x * 16) + y;
 				const chunk = rootAdt.chunks[chunkIndex];
 				const chunkX = chunk.position[0];
@@ -313,9 +313,9 @@ class ADTExporter {
 
 				for (let row = 0, idx = 0; row < 17; row++) { // subchunk
 					const isShort = !!(row % 2);
-					const colCount = isShort ? 8 : 9;					
+					const colCount = isShort ? 8 : 9;
 
-					for (let col = 0; col < colCount; col++) {						
+					for (let col = 0; col < colCount; col++) {
 						let vx = chunkY - (col * UNIT_SIZE);
 						let vy = chunk.vertices[idx] + chunkZ;
 						let vz = chunkX - (row * UNIT_SIZE_HALF);
@@ -337,7 +337,7 @@ class ADTExporter {
 						if (x < 15){
 							if (!isShort && y < 15 && row < 16){ // Long Column; Don't draw bottom row
 								if (col == 0){
-									vertexHeightList[hCount] = vY;									
+									vertexHeightList[hCount] = vY;
 									hCount++;
 								}else if (col < 8){
 									vertexHeightList[hCount] = (vyMinus1 + vy) / 2; // New Vertex in middle (531 = white)
@@ -346,7 +346,7 @@ class ADTExporter {
 									hCount++;
 								}else if (col == 8){ // Bottom Left Corner
 									vertexHeightList[hCount] = (vyMinus1 + vY) / 2; // New Vertex in middle
-									hCount++;									
+									hCount++;
 								}
 							}else if (!isShort && y == 15 && row < 16){ // Long Column; Include bottom row
 								if (col == 0){
@@ -520,11 +520,11 @@ class ADTExporter {
 		// Save Height Data
 		var index = 0;
 		var heightArray2d = [...Array(257)].map(e => Array(257));
-		var heightArraySubchunk = [...Array(16)].map(e => Array(16));		
+		var heightArraySubchunk = [...Array(16)].map(e => Array(16));
 		var pixelPerSubChunk = 256;
-		var countpixels = 0;		
+		var countpixels = 0;
 		for (let y = 0; y < 16; y++) {
-			for (let x = 0, midX = 0; x < 16; x++) { // Swapping these will rotate subchunks				
+			for (let x = 0, midX = 0; x < 16; x++) {
 				var xSize = 16;
 				var ySize = 16;
 				if (y == 15 && x < 15){
@@ -544,7 +544,7 @@ class ADTExporter {
 					pixelPerSubChunk = 256;
 					heightArraySubchunk = [...Array(16)].map(e => Array(16).fill(0));
 				}
-								
+				
 				for (let row = 0; row < ySize; row++) {
 					for (let col = 0; col < xSize; col ++){						
 						var pixIndex = ((row * xSize) + (col)); 
@@ -561,7 +561,7 @@ class ADTExporter {
 				if (heightArraySubchunk === undefined){ log.write("heightArraySubchunk undefined")};
 				for (var a=0; a < heightArraySubchunk.length; a++){
 					var xRow = heightArraySubchunk[a];
-					for (var b=0; b < xRow.length; b++){						
+					for (var b=0; b < xRow.length; b++){
 						if (heightArraySubchunk[a][b] === undefined) { log.write("heightArraySubchunk[" + a + "][" + b + "] is undefined!");}
 						heightArray2d[y*16 + b][x*16 + a] = heightArraySubchunk[a][b];
 					}
@@ -609,10 +609,13 @@ class ADTExporter {
 						mat.scale = Math.pow(2, (params.flags & 0xF0) >> 4);
 					}
 				}
-								
-				var pixelData = new Array(Math.ceil(materialIDs.length/4));
+				
+				var imageCount = Math.ceil(materialIDs.length/4);
+				log.write("imageCount: " + imageCount);
+				var pixelData = new Array(imageCount);
 				for (var p = 0; p < pixelData.length; p++){
-					pixelData[p] = new Uint8ClampedArray(1024 * 1024 * 4);					
+					pixelData[p] = new Uint8ClampedArray(1024 * 1024 * 4);	
+					log.write("PixelData Array: " + p);
 				}
 				// Writing a 1024x1024 image in 64x64 chunks
 				var bytesPerPixel     = 4;      // Each pixel has a R,G,B,A byte
@@ -651,9 +654,13 @@ class ADTExporter {
 				materialJSON += '}}'; // Close the JSON data
 				var matJSON = JSON.parse(materialJSON);
 
-				for (let q=0; q < materialIDs.length; q++){
-					fullJSON += '"id' + q + '":"' + materialIDs[q] + '",';
-				}
+				if (materialIDs.length == 0){
+					fullJSON += '"id0":"null",';
+				}else{
+					for (let q=0; q < materialIDs.length; q++){
+						fullJSON += '"id' + q + '":"' + materialIDs[q] + '",';
+					}
+				}				
 				fullJSON = fullJSON.substring(0, fullJSON.length - 1); // remove tailing comma
 				fullJSON += '}}'; // Close the JSON data				
 				var fullParsedJSON = JSON.parse(fullJSON);
@@ -666,37 +673,38 @@ class ADTExporter {
 						const chunkIndex = (y * 16) + x;
 						const texChunk = texAdt.texChunks[chunkIndex];
 						const alphaLayers = texChunk.alphaLayers || [];
-						const textureLayers = texChunk.layers;						
+						const textureLayers = texChunk.layers;
 
 						// If there is no texture data just skip it
 						if (textureLayers.length > 0) {
-							// If there is texture data, we need a base layer of red to flood the subchunk 							
+							// If there is texture data, we need a base layer of red to flood the subchunk
 							for (let j = y * bytesPerColumn; j < (y * bytesPerColumn) + bytesPerColumn; j += bytesPerRow) { // 1024 pixels wide, 64 pixels high = 65536 * 4 bytes = 262144 (looping y axis)
-								// Now we need to loop the x axis, 64 pixels long								
+								// Now we need to loop the x axis, 64 pixels long
 								for (let i = x * bytesPerSubRow; i < (x * bytesPerSubRow) + bytesPerSubRow; i += bytesPerPixel) { // 64 pixels, 4 bytes each = 256
 									var yloop = ((j / bytesPerRow) - (y * bytesPerColumn) / bytesPerRow);
 									var xloop = ((i / 4) - ((x * bytesPerSubRow) / 4));
-									var alphaIndex = (yloop * 64) + xloop;
-									
+									var alphaIndex = (yloop * 64) + xloop;									
 									// The first TGA image will have base texture flooded with red.
-									if (pixelData[0][j + i + 0] === undefined){
-										log.write("pixeldata[0]" + [j + i + 0] + " is undefined!");
-									}
-									pixelData[0][j + i + 0] = 255; // Red: (186865) 
-									
-									// start at 1, flood red for layer 0
-									for (var k = 1; k < matJSON.chunkData[chunkIndex].length; k++){
-										// k = 1, random materialID. This could be any RGBA, RGBA color! 										
+									// THIS IS WRONG! Must flood base color, may be R, G, B, A
+									// In the case of Azeroth_29_47 subchunk 2, base layer is blue
+									if (pixelData[0][j + i + 0] === undefined) { log.write("pixeldata[0]" + [j + i + 0] + " is undefined!"); }									
+									//pixelData[0][j + i + 0] = 255; // Red: (186865) NOT FLOODING RED ANYMORE
+
+									var numberTextureLayers = matJSON.chunkData[chunkIndex].length;
+									if (chunkIndex == 75 && xloop == 0 && yloop == 0) { log.write("Chunk:" + chunkIndex + ", NumberTextureLayers: " + numberTextureLayers); }							
+									for (var k = 0; k < numberTextureLayers; k++){ // Looping texture layers, could be 0-100
+										// k = 1, random materialID. This could be any RGBA, RGBA color!										
 										if (matJSON.chunkData[chunkIndex][k] === undefined){ log.write("Error: matJSON.chunkData[chunkIndex][k] is undefined"); }
-										var currentID = matJSON.chunkData[chunkIndex][k].id;
 										var currentIndex = -1;
-										for (var l = 0; l < materialIDs.length; l++){
-											if (materialIDs[l] == currentID){
+										var currentID =  matJSON.chunkData[chunkIndex][k].id;
+										for (var l = 0; l < materialIDs.length; l++) {
+											if (materialIDs[l] == currentID) {
 												currentIndex = l;
 											}
-										}
+										}										
 										if (currentIndex == -1){ log.write("ERROR: Index is still -1 after loop:" + currentID);	}
 										var texIndex = currentIndex;
+										if (chunkIndex == 75 && xloop == 0 && yloop == 0) { log.write("texIndex: " + texIndex)}
 										// alphaLayers is an array equal to length of textures and in the same order as materialIDs
 										// each array item is an Array(64 * 64)
 										// alphaLayers[0] is filled with red (255)
@@ -706,42 +714,63 @@ class ADTExporter {
 										// Blue  / 2 has Alpha subtracted from it
 
 										// Calculate image index, 1 TGA image for each 4 textures. index 0 includes base texture on channel 0
+										
 										var imageIndex = Math.floor(texIndex/4);
+										if (chunkIndex == 75 && xloop == 0 && yloop == 0) { log.write("imageIndex: " + imageIndex)}										
 
 										// 0-3 RGBA. If imageIndex=0 this should not be 0 because that is basetexture
 										var channelIndex = texIndex % 4;
+										if (chunkIndex == 75 && xloop == 0 && yloop == 0) { log.write("channelIndex: " + channelIndex)}
 
 										// array  whichTGA   Pixel|chanel
-										if (pixelData[imageIndex] === undefined){
-											log.write("pixelData[" + imageIndex +"] is undefined");
-										}
-										if (pixelData[imageIndex][j + i + channelIndex] === undefined){
-											log.write("pixeldata[" + imageIndex + "]" + ", channelIndex:" + channelIndex + " is undefined!");
-										}
-										if (alphaLayers[k] === undefined){
-											log.write("alphaLayers[k] is undefined: " + texIndex + ". Alphalayers length: " + alphaLayers.length + ", Chunk: " + chunkIndex);
-										}
-										if (alphaLayers[k][alphaIndex] === undefined){
-											log.write("alphaLayers[" + k + "] alphaIndex[" + alphaIndex + "] is undefined!");
-										}
+										if (pixelData[imageIndex] === undefined){ log.write("pixelData[" + imageIndex +"] is undefined"); }
+										if (pixelData[imageIndex][j + i + channelIndex] === undefined){ log.write("pixeldata[" + imageIndex + "]" + ", channelIndex:" + channelIndex + " is undefined!"); }
+										
 										// Write the actual pixel data
-										pixelData[imageIndex][j + i + channelIndex] = alphaLayers[k][alphaIndex];
-																				
-										// Need to subtract all layers up to channelIndex
-										// ChannelIndex is 0-3
-										// example; imageIndex = 1;
-										var subtractImages = imageIndex % 4; // subtract all 4 channels (full image)
-										var subtractChannels = channelIndex - 1; // subtract only certain channels
+										if (k == 0) { // BASE LAYER 
+											pixelData[imageIndex][j + i + channelIndex] = 255; // Flood Base Layer
+										}else{
+											if (alphaLayers[k] === undefined){
+												log.write("alphaLayers[k] is undefined: " + texIndex + ". Alphalayers length: " + alphaLayers.length + ", Chunk: " + chunkIndex);
+											}
+											if (alphaLayers[k][alphaIndex] === undefined){
+												log.write("alphaLayers[" + k + "] alphaIndex[" + alphaIndex + "] is undefined!");
+											}
 
-										for (var m = 0; m < subtractImages; m++){ // All previous layers except this one
-											pixelData[m][j + i + 0] -= alphaLayers[k][alphaIndex];
-											pixelData[m][j + i + 1] -= alphaLayers[k][alphaIndex];
-											pixelData[m][j + i + 2] -= alphaLayers[k][alphaIndex];
-											pixelData[m][j + i + 3] -= alphaLayers[k][alphaIndex];
-										}
+											pixelData[imageIndex][j + i + channelIndex] = alphaLayers[k][alphaIndex];
+											
+											var subtractImages = imageIndex % 4; // subtract all 4 channels (full image)
+											
+											for (var m = 0; m < imageCount; m++){ // All images
+												if (chunkIndex == 75 && xloop == 0 && yloop == 0){log.write("m loop: " + m);}
+												//log.write("pixelData[" + m + "] looping");
+												if (pixelData[m] === undefined) {log.write("ERROR: pixeldata[" + m + "] is undefined!");}
+												if (m != imageIndex){
+													if (chunkIndex == 75 && xloop == 0 && yloop == 0) { log.write("subtract full image: " + m)}
+													if (pixelData[m][j + i + 0] === undefined) { log.write("pixelData[" + m +"] is undefined!");}
+													pixelData[m][j + i + 0] -= alphaLayers[k][alphaIndex];
+													pixelData[m][j + i + 1] -= alphaLayers[k][alphaIndex];
+													pixelData[m][j + i + 2] -= alphaLayers[k][alphaIndex];
+													pixelData[m][j + i + 3] -= alphaLayers[k][alphaIndex];
+												}
+											}
 
-										for (var n = 0; n < subtractChannels; n++){
-											pixelData[imageIndex][j + i + n] -= alphaLayers[k][alphaIndex];
+											for (var n = 0; n < 4; n++){ // Loop 4 times
+												if (n != channelIndex){
+													/*
+													var subtractID = matJSON.chunkData[chunkIndex][n].id;
+													var subtractIndex = -1;
+													for (var p = 0; p < materialIDs.length; p++){
+														if (materialIDs[p] == subtractID){
+															subtractIndex = p;
+														}
+													}
+	
+													var subIndex = subtractIndex % 4;*/
+													//pixelData[imageIndex][j + i + subIndex] -= alphaLayers[k][alphaIndex];
+													pixelData[imageIndex][j + i + n] -= alphaLayers[k][alphaIndex];
+												}
+											}
 										}
 									}
 								}
