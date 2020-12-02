@@ -215,6 +215,10 @@
 								<input type="checkbox" v-model="config.mapsIncludeFoliage"/>
 								<span>Export Foliage</span>
 							</label>
+							<label class="ui-checkbox">
+								<input type="checkbox" v-model="config.export4x4area"/>
+								<span>Export 4x4 Area</span>
+							</label>
 							<span class="header">Terrain Texture Quality</span>
 							<menu-button :label="'%s'" :options="[-2, -1, 0, 512, 1024, 4096, 8192, 16384]" :display-names="['Splat Maps', 'Alpha Maps', 'None', 'Minimap (512)', 'Low (1k)', 'Medium (4k)', 'High (8k)', 'Ultra (16k)']" :default="config.exportMapQuality" @change="config.exportMapQuality = $event" :disabled="isBusy" :dropdown="true"></menu-button>
 						</div>
