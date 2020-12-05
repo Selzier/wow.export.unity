@@ -39,7 +39,6 @@ const CHUNK_SIZE = TILE_SIZE / 16;
 const UNIT_SIZE = CHUNK_SIZE / 8;
 const UNIT_SIZE_HALF = UNIT_SIZE / 2;
 const wdtCache = new Map();
-
 const FRAG_SHADER_SRC = path.join(constants.SHADER_PATH, 'adt.fragment.shader');
 const VERT_SHADER_SRC = path.join(constants.SHADER_PATH, 'adt.vertex.shader');
 
@@ -549,7 +548,7 @@ class ADTExporter {
 					}
 				}
 				
-				// Now before we draw each sub-chunk to TGA, we need to check it's texture list in json.
+				// Now before we draw each sub-chunk to TGA, we need to check its texture list in json.
 				// Based on what order the textures are for that sub-chunk, we may need to draw RGBA in a different order than 0,1,2,3
 				// Loop Y first so we go left to right, top to bottom. Loop 16x16 subchunks to get the full chunk
 				for (let x = 0; x < 16; x++) {
@@ -559,7 +558,7 @@ class ADTExporter {
 						const alphaLayers = texChunk.alphaLayers || [];
 						const textureLayers = texChunk.layers;
 
-						// If there is no texture data just skip it. Todo: Draw black?
+						// If there are no texture data just skip it. Todo: Draw black?
 						if (textureLayers.length > 0) {
 							// 1024 pixels wide, 64 pixels high = 65536 * 4 bytes = 262144 (looping y axis)
 							for (let j = y * bytesPerColumn; j < (y * bytesPerColumn) + bytesPerColumn; j += bytesPerRow) {

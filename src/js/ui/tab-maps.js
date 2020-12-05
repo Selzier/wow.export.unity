@@ -178,7 +178,7 @@ const exportSelectedMap = async () => {
 	var pixelDataFull;
 	var tileID;
 
-	if (config.export4x4area){
+	if (config.export4x4area) {
 		//************** Pre-Loop all chunks to create a terrain texture list ****/
 		// This allows all 16 chunks to use a "master texture list" which will
 		// become the terrain "palette preset" in the Unity terrain inspector. 
@@ -234,7 +234,7 @@ const exportSelectedMap = async () => {
 		var adt = null;
 		core.setToast('progress', 'Exporting: ' + loopIndex, null, -1, false);
 		if (config.export4x4area){			
-			adt = new ADTExporter4x4(selectedMapID, selectedMapDir, index, loopIndex, materialArrayFull); // Will need to pass the material list for all chunks.
+			adt = new ADTExporter4x4(selectedMapID, selectedMapDir, index, materialArrayFull); // Will need to pass the material list for all chunks.
 		}else{
 			adt = new ADTExporter(selectedMapID, selectedMapDir, index);
 		}
@@ -288,8 +288,10 @@ const exportSelectedMap = async () => {
 	heightArrayFull.reverse();
 
 	var jsonDir = dir + "_ExportData.json";
-	try { fs.writeFileSync(jsonDir, JSON.stringify(exportSessionData)); //exportSessionData //heightArrayFull
-	} catch (err) { log.write(err); }
+	if (!config.export4x4area){
+		try { fs.writeFileSync(jsonDir, JSON.stringify(exportSessionData)); } catch (err) { log.write(err); } // Writing way too much data
+	}
+	
 	// exportSessionData: Array returned by ADTExporter
 	// materialArrayFull: List of all materials used 
 	// heightArrayFull:   Array of 1025x1025 height values
